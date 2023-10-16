@@ -5,15 +5,34 @@ import re         # regular expression tools
 import os         # checking if file exists
 import subprocess # executing program
 
+from buf import BufferedFdWriter, BufferedFdReader, bufferedCopy
+
+
 debug = 1
+
+byteWriter = BufferedFdWriter(1) # stdout
 
 #Framer's job
   #Byte-array -> a framed sequence of bytes written to a fd
 class Framer:
     def __init__(self, writeFD):
         self.writeFD = writeFD
-    def frame(self, byteArray):
-        return (str(len(byteArray)) + ":" + str(byteArray) + ":")  
+    def frame(self):
+        writeFDLen = len(self.writeFD)
+        tarFrame = "{writeFDLen}:"
+        #Read file contents and add it to the frame
+        fd = os.open("src/" + self.writeFD, os.O_RDONLY)
+        
+        if debug: print(f"opening {self.writeFD}, fd={fd}\n")
+        
+        byteReader = BufferedFdReader(fd)
+        fContents = b''
+        while (bv := byteReader.readByte()) is not None:
+            fContents += bv
+        byteReader.close()
+        fCLen = len(fContents)
+        tarFrame += "{fCLen}:{fContents}:"
+        return tarFrame
 
 #Unframer
   #Reading from a fd -> Byte array
@@ -21,33 +40,17 @@ class Unframer:
     def __init__(self, readFD):
         self.readFD = readFD
     def unFrame(self):
-        fileName = "fileName"
-        fileContents = "FileContents"
-        pass
+        #Read :length:
+        #sampleByteArray = os.read(self.readFD, fdlength)
+        return b"sampleByteArray"
 
 class TarWriter:
     def __init__(self, writeFD):
         self.writeFD = writeFD
         sys.stdout.write("B\'") #begin the tar file
     def storeFile(self, fileName):
-        tarFramer = Framer(fileName)
-        framedFileName = tarFramer.frame(fileName)
-        #decode file contents into a byte array
-        fd = os.open("src/" + fileName, os.O_RDONLY)
-        fileContents = ""
-        buffer = os.read(fd, 100000)
-        fileContents += str(buffer)
-        '''
-        while buffer != []:
-            buffer = os.read(fd, 100)
-            fileContents += str(buffer)
-        '''
-        #Frame(byteArray containing the file contents)
-        framedFileContents = tarFramer.frame(fileContents)
-        os.close(fd)
-        sys.stdout.write(framedFileName)
-        sys.stdout.write(framedFileContents)
-        pass
+        tarFrame = Framer(fileName).frame()
+        sys.stdout.write(tarFrame)
 
 class TarReader:
   def init(self, readFD):
@@ -56,7 +59,6 @@ class TarReader:
     tarUnFramer = Unframer(self.readFD)
     tarIn = os.open(self.readFD, os.O_RDONLY)
     #until input file end is reached
-    #read entire tar File as one object
     #Split the tar file
     #Alternate between assigning file names and file contents, writing them when finished
       #Name = unframe().decode()
