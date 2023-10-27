@@ -19,19 +19,20 @@ class Framer:
         self.writeFD = writeFD
     def frame(self):
         writeFDLen = len(self.writeFD)
-        tarFrame = "{writeFDLen}:"
+        tarFrame = f"{writeFDLen}:"
         #Read file contents and add it to the frame
-        fd = os.open("src/" + self.writeFD, os.O_RDONLY)
+        fd = os.open(f"src/{self.writeFD}", os.O_RDONLY)
         
         if debug: print(f"opening {self.writeFD}, fd={fd}\n")
         
         byteReader = BufferedFdReader(fd)
         fContents = b''
+        #Buffered read throughout the entire file
         while (bv := byteReader.readByte()) is not None:
             fContents += bv
         byteReader.close()
         fCLen = len(fContents)
-        tarFrame += "{fCLen}:{fContents}:"
+        tarFrame += f"{fCLen}:{fContents}:"
         return tarFrame
 
 #Unframer
