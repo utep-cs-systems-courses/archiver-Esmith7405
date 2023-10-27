@@ -8,7 +8,7 @@ import subprocess # executing program
 from buf import BufferedFdWriter, BufferedFdReader, bufferedCopy
 
 
-debug = 1
+debug = 0
 
 byteWriter = BufferedFdWriter(1) # stdout
 
@@ -19,7 +19,7 @@ class Framer:
         self.writeFD = writeFD
     def frame(self):
         writeFDLen = len(self.writeFD)
-        tarFrame = f"{writeFDLen}:"
+        tarFrame = f"{writeFDLen}:{self.writeFD}:"
         #Read file contents and add it to the frame
         fd = os.open(f"src/{self.writeFD}", os.O_RDONLY)
         
@@ -29,21 +29,11 @@ class Framer:
         fContents = b''
         #Buffered read throughout the entire file
         while (bv := byteReader.readByte()) is not None:
-            fContents += bv
+            fContents += chr(bv).encode()
         byteReader.close()
         fCLen = len(fContents)
         tarFrame += f"{fCLen}:{fContents}:"
         return tarFrame
-
-#Unframer
-  #Reading from a fd -> Byte array
-class Unframer:
-    def __init__(self, readFD):
-        self.readFD = readFD
-    def unFrame(self):
-        #Read :length:
-        #sampleByteArray = os.read(self.readFD, fdlength)
-        return b"sampleByteArray"
 
 class TarWriter:
     def __init__(self, writeFD):
@@ -53,21 +43,54 @@ class TarWriter:
         tarFrame = Framer(fileName).frame()
         sys.stdout.write(tarFrame)
 
+#Unframer
+  #Reading from a fd -> Byte array
+class Unframer:
+    def __init__(self, readFD):
+        self.readFD = readFD
+        self.byteReader = BufferedFdReader(self.readFD)
+    def unFrame(self):
+        fLength = b''
+        #Buffered read frame length
+        while (bv := self.byteReader.readByte()) != 58:
+            print("read '" + chr(bv) + "'")
+            fLength += chr(bv).encode()
+        print("Finished Read")
+        #byteReader.close()
+        fLength = (int)(fLength) + 1
+        #sampleByteArray = os.read(self.readFD, fdlength)
+        fContent = b''
+        while(fLength) > 0:
+            fContent += chr(self.byteReader.readByte()).encode()
+            fLength-=1
+        print("Unframed '" + fContent.decode() + "'")
+        #self.byteReader.readByte()
+        return fContent
+
 class TarReader:
-  def init(self, readFD):
+  def __init__(self, readFD):
       self.readFD = readFD
   def Untar(self):
     tarUnFramer = Unframer(self.readFD)
-    tarIn = os.open(self.readFD, os.O_RDONLY)
+    os.read(self.readFD,2)
+    unTarName = tarUnFramer.unFrame().decode()
+    unTarContents = tarUnFramer.unFrame()
     #until input file end is reached
-    #Split the tar file
-    #Alternate between assigning file names and file contents, writing them when finished
-      #Name = unframe().decode()
-      #Contents[] = unframe()
-      #write contents to fileName
-    os.close(tarIn)
-    pass
+    while unTarName is not None and unTarContents is not None:
+        #write contents to fileName
+        os.open(unTarName, os.O_CREAT)
+        writeFD = os.open(unTarName, os.O_WRONLY)
 
+        if debug: print(f"opened {writeFD}")
+        
+        os.write(writeFD, unTarContents)
+        
+        if debug: print(f"written to {writeFD}")
+        
+        #Unframe the next file
+        unTarName = tarUnFramer.unFrame().decode()
+        unTarContents = tarUnFramer.unFrame()
+    
 #Begin Execution
 if len(sys.argv) < 2:
     print("Correct usage: mytar.py c <input1> <input2> ... <inputN> > <out.tar> \nmytar.py x <output.txt>")
@@ -91,7 +114,11 @@ if sys.argv[1] == "c":
 
 #mytar.py x <output.txt> - Take the output file and seperate it into its respective files
 if sys.argv[1] == "x":
-    if debug: print("Extracting\n")
+    readFD = os.open(sys.argv[2], os.O_RDONLY)
 
-    reader = TarReader(sys.argv[2])
+    if debug: print(f"opened {readFD}")
+    if debug: print("Extracting\n")
+    
+    reader = TarReader(readFD)
     reader.Untar()
+    os.close(readFD)
