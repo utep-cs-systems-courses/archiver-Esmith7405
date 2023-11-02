@@ -8,8 +8,7 @@ import codecs
 
 from buf import BufferedFdWriter, BufferedFdReader, bufferedCopy
 
-
-debug = 1
+debug = 0
 
 byteWriter = BufferedFdWriter(1) # stdout
 
@@ -20,9 +19,9 @@ class Framer:
         self.writeFD = writeFD
     def frame(self):
         #Frame the file descriptor
-        FDBytes = self.writeFD.encode()
-        writeFDLen = len(FDBytes)
-        tarFrame = f'{writeFDLen}:{FDBytes}:'
+        #FDBytes = self.writeFD.encode()
+        writeFDLen = len(self.writeFD)
+        tarFrame = f'{writeFDLen}:{self.writeFD}:'
         #Read file contents and add it to the frame
         fd = os.open(f"src/{self.writeFD}", os.O_RDONLY)
         
@@ -34,8 +33,9 @@ class Framer:
         while (bv := byteReader.readByte()) is not None:
             fContents += chr(bv).encode()
         byteReader.close()
-        fCLen = len(fContents)+1
-        tarFrame += f'{fCLen}:{fContents}:'
+        fCToStr = str(fContents)[2:-1]
+        fCLen = len(fCToStr)
+        tarFrame += f'{fCLen}:{fCToStr}:'
         return tarFrame
 
 class TarWriter:
@@ -57,14 +57,17 @@ class Unframer:
         #Buffered read frame length
         while (bv := self.byteReader.readByte()) != 58:
             if debug: print("read '" + chr(bv) + "'")
+            if bv is None:
+                if debug: print('No byte read, terminating')
+                return None
             fLength += chr(bv).encode()
-        print("Finished Read")
+        if debug:print("Finished Read")
         #byteReader.close()
         #Terminate if Byte Length is empty
         if(fLength == b''):
-                print('No byte read, terminating')
-                return None
-        fLength = (int)(fLength) + 3
+            if debug: print('No byte read, terminating')
+            return None
+        #fLength = (int)(fLength) + 3
         #sampleByteArray = os.read(self.readFD, fdlength)
         fContent = b''
         fLength = int(fLength) #Cast fileLength to int
