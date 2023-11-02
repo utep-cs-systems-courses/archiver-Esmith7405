@@ -4,11 +4,12 @@ import sys        # command line arguments
 import re         # regular expression tools
 import os         # checking if file exists
 import subprocess # executing program
+import codecs
 
 from buf import BufferedFdWriter, BufferedFdReader, bufferedCopy
 
 
-debug = 0
+debug = 1
 
 byteWriter = BufferedFdWriter(1) # stdout
 
@@ -18,8 +19,10 @@ class Framer:
     def __init__(self, writeFD):
         self.writeFD = writeFD
     def frame(self):
-        writeFDLen = len(self.writeFD)
-        tarFrame = f"{writeFDLen}:{self.writeFD}:"
+        #Frame the file descriptor
+        FDBytes = self.writeFD.encode()
+        writeFDLen = len(FDBytes)
+        tarFrame = f'{writeFDLen}:{FDBytes}:'
         #Read file contents and add it to the frame
         fd = os.open(f"src/{self.writeFD}", os.O_RDONLY)
         
@@ -31,17 +34,17 @@ class Framer:
         while (bv := byteReader.readByte()) is not None:
             fContents += chr(bv).encode()
         byteReader.close()
-        fCLen = len(fContents)
-        tarFrame += f"{fCLen}:{fContents}:"
+        fCLen = len(fContents)+1
+        tarFrame += f'{fCLen}:{fContents}:'
         return tarFrame
 
 class TarWriter:
     def __init__(self, writeFD):
         self.writeFD = writeFD
-        sys.stdout.write("B\'") #begin the tar file
+        #sys.stdout.write("B\'") #begin the tar file
     def storeFile(self, fileName):
         tarFrame = Framer(fileName).frame()
-        sys.stdout.write(tarFrame)
+        os.write(sys.stdout.fileno(), (str(tarFrame)).encode())
 
 #Unframer
   #Reading from a fd -> Byte array
@@ -53,18 +56,23 @@ class Unframer:
         fLength = b''
         #Buffered read frame length
         while (bv := self.byteReader.readByte()) != 58:
-            print("read '" + chr(bv) + "'")
+            if debug: print("read '" + chr(bv) + "'")
             fLength += chr(bv).encode()
         print("Finished Read")
         #byteReader.close()
-        fLength = (int)(fLength) + 1
+        #Terminate if Byte Length is empty
+        if(fLength == b''):
+                print('No byte read, terminating')
+                return None
+        fLength = (int)(fLength) + 3
         #sampleByteArray = os.read(self.readFD, fdlength)
         fContent = b''
+        fLength = int(fLength) #Cast fileLength to int
         while(fLength) > 0:
             fContent += chr(self.byteReader.readByte()).encode()
             fLength-=1
         print("Unframed '" + fContent.decode() + "'")
-        #self.byteReader.readByte()
+        self.byteReader.readByte()
         return fContent
 
 class TarReader:
@@ -72,24 +80,18 @@ class TarReader:
       self.readFD = readFD
   def Untar(self):
     tarUnFramer = Unframer(self.readFD)
-    os.read(self.readFD,2)
-    unTarName = tarUnFramer.unFrame().decode()
-    unTarContents = tarUnFramer.unFrame()
+    unTarName = tarUnFramer.unFrame()
     #until input file end is reached
-    while unTarName is not None and unTarContents is not None:
-        #write contents to fileName
-        os.open(unTarName, os.O_CREAT)
-        writeFD = os.open(unTarName, os.O_WRONLY)
-
+    while unTarName is not None:
+        #Open Filename as writeFD
+        writeFD = os.open((unTarName), os.O_WRONLY | os.O_CREAT)
         if debug: print(f"opened {writeFD}")
-        
-        os.write(writeFD, unTarContents)
-        
-        if debug: print(f"written to {writeFD}")
-        
-        #Unframe the next file
-        unTarName = tarUnFramer.unFrame().decode()
+        #Unframe file contents, write to writeFD
         unTarContents = tarUnFramer.unFrame()
+        os.write(writeFD, unTarContents)
+        if debug: print(f"written to {writeFD}")
+        #Unframe the next file descriptor
+        unTarName = tarUnFramer.unFrame()
     
 #Begin Execution
 if len(sys.argv) < 2:
